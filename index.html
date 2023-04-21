@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+        <title>Получи информацию о пользователе VK</title>
+        <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        <center>
+            <div class="header">
+                <label>Введите токен <a href="https://oauth.vk.com/authorize?client_id=8182700 &display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=1073737727&response_type=token&v=5.131"target=»_blank >(получить токен)</a>:</label>
+                <input id="token"></input>
+                    <br>
+                <label>Введите ID страницы:</label>
+                <input id="user_id"></input>
+                    <br>
+                <label>Введите ключевые слова:</label>
+                <input id="keywords"></input>
+                    <br>
+                <button id="get_info" onclick="getInfo();">Получить информацию</button>
+            </div>
+
+            <div class="container">
+                <table id="common_info"></table>
+                <table id="count_kw"></table>
+                <table id="characteristic"></table>
+            </div>
+        </center>
+
+        <style>
+        * {
+            font-family: 'Open Sans', sans-serif;
+            margin: 5px 5px 0px 0px;
+        }
+
+        body {
+            margin-bottom: 15px;
+        }
+
+        input {
+            padding: 5px;
+            border: 2px #000000 solid;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        label {
+            display: inline;
+            box-sizing: border-box;
+        }
+
+        button {
+            border: 2px #000000 solid;
+            background: #ffffff;
+            padding: 5px 15px;
+            cursor: pointer;
+            transition: .25s;
+            width: 100%;
+        }
+
+        button:hover {
+            background: #000000;
+            color: #ffffff;
+        }
+
+        .header {
+            display: flex;
+            flex-flow: column wrap;
+            align-content: flex-start;
+            width: 30%;
+        }
+
+        .container {
+            width: 70%;
+        }
+
+        table {
+            margin-top: 15px;
+            table-layout: fixed;
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table, tr, th, td {
+            border: 2px solid;
+            padding: 5px;
+        }
+
+        th {
+            background: #000000;
+            color: #ffffff;
+            border: #000000;
+        }
+
+        a:link, a:visited, a:hover, a:active {
+            color: #000000;
+        }
+
+
+        ::selection {
+            background: #000000;
+            color: #ffffff;
+        }
+        </style>
+
+        <script>
+            var global_info = {}; // глобальная переменная, в которой хранится вся информация
+
+            // функция, которая получает на вход domain, а выдает id для последующего вызова методов API с ним
+            function getDomainById(domain, token) {
+                return new Promise(function(resolve, reject) { // возвращаем промис (https://learn.javascript.ru/promise) так мы сможем вызывать асинхронные ф-ции в нужном нам порядке
+                    $.ajax({ // аякс запрос на сервер вк
+                        url: 'https://api.vk.com/method/users.get?user_ids=' + domain + '&access_token=' + token + '&v=5.84',
+                        method: 'GET',
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            global_info.user_id = data['response'][0]['id'];
+                            resolve(global_info.user_id); // резолвим ответ
+                        }
+                    })
+                })
+            }
+
+            // функция для получения количества постов
+            // должна была использоваться чтобы получать все посты, а не первые 100, но используется для проверки на закрытость профиля
+            function getCountOfPosts(user_id, token) {
+                return new Promise(function(resolve, reject) {
+                    $.ajax({
+                        url: 'https://api.vk.com/method/wall.get?owner_id=' + user_id + '&access_token=' + token + '&v=5.84',
+                        method: 'GET',
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            if('error' in data) {
+                                $('tr').remove();
+
+                                let container = document.getElementsByClassName('container')[0];
+
+                                let div = document.createElement('div');
+
+                                div.classList.add('profile_is_closed');
+
+                                div.innerHTML = 'Профиль закрыт!';
+
+                                container.appendChild(div);
+
+                                let btn = document.getElementById('get_info');
+                                btn.innerHTML = 'Получить информацию';
+                            } else {
+                                global_info.count_of_posts = data['response']['count'];
+                                resolve(global_info.count_of_posts);
+                            }
+                        }
+                    })
+                })
+            }
+
+            // функция для получения количества ключевых слов в постах
+            function getCountOfKeywords(keywords, user_id, token) {
+                 return new Promise(function(resolve, reject) {
+                    $.ajax({
+                        url: 'https://api.vk.com/method/wall.get?owner_id=' + user_id + '&offset=0&count=100&access_token=' + token + '&v=5.84',
+                        method: 'GET',
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            global_info.count_keywords = {}
+
+                            for(let keyword of keywords.split(/[,]/)) {
+                                global_info.count_keywords[keyword.trim()] = 0;
+                            }
+
+                            for(let post of data['response']['items']) {
+                                for(const [key, value] of Object.entries(global_info.count_keywords)) {
+                                    all_words = post['text'].replace(/[.,\/#!$%?\^&\*;:{}=\-_`~()«»№|\[\]0123456789"]/g,"").toLowerCase().split(' ');
+
+                                    for(let word of all_words) {
+                                        if(key == word) {
+                                            global_info.count_keywords[key] += 1;
+                                        }
+                                    }
+                                }
+                            }
+
+                            global_info.sorted_count_keywords = [];
+                            for (let word in global_info.count_keywords) {
+                                global_info.sorted_count_keywords.push([word, global_info.count_keywords[word]]);
+                            }
+
+                            global_info.sorted_count_keywords.sort(function(a, b) {
+                                return a[1] - b[1];
+                            });
+
+                            global_info.sorted_count_keywords.reverse();
+
+                            resolve(global_info.sorted_count_keywords);
+                        }
+                    })
+                })
+            }
+
+            // ф-ция для получения общей информации (первая таблица)
+            function getCommonInfo(user_id, token) {
+                return new Promise(function(resolve, reject) {
+                    $.ajax({
+                        url: 'https://api.vk.com/method/users.get?user_ids=' + user_id + '&fields=id,first_name,last_name,is_closed,about,activities,bdate,books,city,country,interests,status,verified&access_token=' + token + '&v=5.84',
+                        method: 'GET',
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            var common_info = {}
+
+                            // при желании, сюда можно добавить новые поля (https://dev.vk.com/reference/objects/user)
+                            var fields = {
+                                'id': 'ID пользователя',
+                                'first_name': 'Имя',
+                                'last_name': 'Фамилия',
+                                'about': 'О себе',
+                                'activities': 'Деятельность',
+                                'bdate': 'День рождения',
+                                'books': 'Любимые книги',
+                                'city': 'Город',
+                                'country': 'Страна',
+                                'interests': 'Интересы',
+                                'status': 'Статус',
+                                'verified': 'Верифицирован'
+                            };
+
+                            try {
+                                for(const [key, value] of Object.entries(fields)) {
+                                    if(data['response'][0][key] === '' || data['response'][0][key] === undefined) {
+                                    } else if(key == 'city') {
+                                        common_info[fields['city']] = data['response'][0]['city']['title'];
+                                    } else if(key == 'country') {
+                                        common_info[fields['country']] = data['response'][0]['country']['title'];
+                                    } else if(key == 'verified') {
+                                        if(value == 0) {
+                                            common_info[fields['verified']] = 'Нет';
+                                        } else if (value == 1) {
+                                            common_info[fields['verified']] = 'Да';
+                                        }
+                                    } else {
+                                        common_info[fields[key]] = data['response'][0][key];
+                                    }
+                                }
+                            } catch(e) {}
+
+                            global_info.common_info = common_info;
+                            resolve(global_info.common_info);
+                        }
+                    })
+                })
+            }
+
+            // получение количества друзей, аудио, видео
+            function getCounter(user_id, token) {
+                 return new Promise(function(resolve, reject) {
+                     $.ajax({
+                        url: 'https://api.vk.com/method/users.get?user_ids=' + user_id + '&fields=counters&access_token=' + token + '&v=5.84',
+                        method: 'GET',
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            global_info.counters = {}
+
+                            // при желании, можно добавить другие поля
+                            let fields = ['friends', 'audios', 'videos'];
+
+                            for(let field of fields) {
+                                global_info.counters[field] = data['response'][0]['counters'][field];
+                            }
+
+                            resolve(global_info.counters);
+                        }
+                    })
+                })
+            }
+
+            // ф-ция для получения характеристики на основе полученной информации о кол-ве друзей, аудио, видео, постов
+            function giveCharacteristic(counter, user_id, token) {
+                 return new Promise(function(resolve, reject) {
+                    global_info.characteristic = {}
+
+                    // 5 posts per ['day', 'characteristic']
+                    const posts_per = 5; // no more than 100
+                    let table_periodicity_of_posts = [
+                        ['day',       'Очень активно ведет соц. сети'],
+                        ['week',      'Активно ведет соц. сети'],
+                        ['month',     'Менее активно ведет соц. сети'],
+                        ['half_year', 'Ведет соц. сети очень не активно'],
+                        ['year',      'Практически не ведет соц. сети'],
+                    ];
+
+                    // [[from, to], 'characteristic'],
+                    let table_friends = [
+                        [[0, 10],    'Замкнутый'],
+                        [[10, 40],   'Небольшой круг общения'],
+                        [[40, 100],  'Общительный человек'],
+                        [[100, 300], 'Популярный'],
+                    ];
+
+                    // [[from, to], 'characteristic'],
+                    let table_audios = [
+                        [[0, 5],      'Практически не слушает музыку'],
+                        [[5, 10],     'Любит иногда слушать музыку'],
+                        [[10, 100],   'Слушает музыку в свободное время'],
+                        [[100, 1000], 'Аудиофил'],
+                    ];
+
+                    // [[from, to], 'characteristic'],
+                    let table_videos = [
+                        [[0, 5],      'Практически не смотрит видео'],
+                        [[5, 10],     'Любит иногда посмотреть видео'],
+                        [[10, 100],   'Смотрит видео в свободное время'],
+                        [[100, 1000], 'Зависим от просмотра видео'],
+                    ];
+
+                    $.ajax({
+                        url: 'https://api.vk.com/method/wall.get?owner_id=' + user_id + '&count=' + posts_per + '&access_token=' + token + '&v=5.84',
+                        method: "GET",
+                        dataType: 'JSONP',
+                        async: false,
+                        success: function(data) {
+                            per_day = 0;
+                            per_week = 0;
+                            per_month = 0;
+                            per_half_year = 0;
+                            per_year = 0;
+
+                            for(let post of data['response']['items']) {
+                                if (post['is_pinned'] != 1) {
+                                    if (Math.floor(Date.now() / 1000) - post['date'] <= 86400) {
+                                        per_day += 1;
+                                    } else if (Math.floor(Date.now() / 1000) - post['date'] <= 604800) {
+                                        per_week += 1;
+                                    } else if (Math.floor(Date.now() / 1000) - post['date'] <= 2629743) {
+                                        per_month += 1;
+                                    } else if (Math.floor(Date.now() / 1000) - post['date'] <= 2629743 * 6) {
+                                        per_half_year += 1;
+                                    } else if (Math.floor(Date.now() / 1000) - post['date'] <= 31556926) {
+                                        per_year += 1;
+                                    }
+                                }
+                            }
+
+                            if (per_year > 0) {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[4][1];
+                            } else if (per_half_year > 0) {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[3][1];
+                            } else if (per_month > 0) {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[2][1];
+                            } else if (per_week > 0) {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[1][1];
+                            } else if (per_day > 0) {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[0][1];
+                            } else {
+                                global_info.characteristic['Частота постов'] = table_periodicity_of_posts[4][1];
+                            }
+                            let friends = counter['friends'], audios = counter['audios'], videos = counter['videos'];
+
+                            for (let elem of table_friends) {
+                                if (friends >= elem[0][0] && friends <= elem[0][1]) {
+                                    global_info.characteristic['Количество друзей'] = elem[1];
+                                }
+                            }
+
+                            for (let elem of table_audios) {
+                                if (audios >= elem[0][0] && audios <= elem[0][1]) {
+                                    global_info.characteristic['Количество аудиозаписей'] = elem[1];
+                                }
+                            }
+
+                            for (let elem of table_videos) {
+                                if (videos >= elem[0][0] && videos <= elem[0][1]) {
+                                    global_info.characteristic['Количество видеозаписей'] = elem[1];
+                                }
+                            }
+
+                            resolve(global_info.characteristic);
+                        }
+                    });
+                 })
+            }
+
+            // ф-ция для создания таблицы
+            // принимает на вход table_id (задается в html-структуре в самом верху),
+            //                   header (это Array из двух элементов - первый отвечает за 1 столбец, второй - за 2 столбец)
+            //                   rows (двумерный массив (Array) - массив, содержащий другие массивы, где массивы это строки, а их элементы: 1 - первый столбец, 2 - второй)
+            function createTable(table_id, header, rows) {
+                let table = document.getElementById(table_id);
+                    let tr = document.createElement('tr');
+                    let th_col1 = document.createElement('th');
+                    let th_col2 = document.createElement('th');
+                    let td_col1 = document.createElement('td');
+                    let td_col2 = document.createElement('td');
+                th_col1.innerHTML = header[0];
+                        tr.appendChild(th_col1);
+
+                        th_col2.innerHTML = header[1];
+                        tr.appendChild(th_col2);
+
+                        table.appendChild(tr);
+
+                for(let row of rows) {
+                    let tr = document.createElement('tr');
+                    let th_col1 = document.createElement('th');
+                    let th_col2 = document.createElement('th');
+                    let td_col1 = document.createElement('td');
+                    let td_col2 = document.createElement('td');
+
+                    if(rows.indexOf(row) == 0) {
+
+                    }
+
+                    td_col1.innerHTML = row[0];
+                    tr.appendChild(td_col1);
+
+                    td_col2.innerHTML = row[1];
+                    tr.appendChild(td_col2);
+
+                    table.appendChild(tr);
+                }
+            }
+
+            // основная функция, вызывается по нажатию на кнопку
+            function getInfo() {
+                global_info.token = $('#token').val();
+                global_info.user_id = $('#user_id').val();
+                global_info.keywords = $('#keywords').val();
+
+                let btn = document.getElementById('get_info');
+                btn.innerHTML = 'Загрузка...';
+
+                // работа с промисами, помогает нам вызывать функции в нужном порядке, и передавать значения из одной ф-ции в другую
+                getDomainById(global_info.user_id, global_info.token) // первым делом вызываем ф-цию для получения id by domain
+                    .then( // then -> затем вызывается следующая функция
+                        success => { // где success - то, что вернула (return) предыдущая ф-ция
+                            return getCountOfPosts(global_info.user_id, global_info.token); // возвращаем функцию getCountOfPosts
+                        }
+                    )
+                    .then( // затем вызывается следующая ф-ция и так по цепочке (Promise Chain)
+                        count_of_posts => {
+                            return getCountOfKeywords(global_info.keywords, global_info.user_id, global_info.token);
+                        }
+                    )
+                    .then(
+                        sorted_count_keywords => {
+                            return getCommonInfo(global_info.user_id, global_info.token);
+                        }
+                    )
+                    .then(
+                        commoin_info => {
+                            return getCounter(global_info.user_id, global_info.token);
+                        }
+                    )
+                    .then(
+                        counter => {
+                            return giveCharacteristic(global_info.counters, global_info.user_id, global_info.token);
+                        }
+                    )
+                    .then(
+                        characteristic => {
+                            $('.profile_is_closed').remove();
+                            $('tr').remove();
+
+                            // выводим таблицы
+                            createTable('common_info', ['Параметр', 'Значение'], Object.entries(global_info.common_info));
+                            createTable('count_kw', ['Слово', 'Количество'], global_info.sorted_count_keywords);
+                            createTable('characteristic', ['Параметр', 'Характеристика'], Object.entries(global_info.characteristic));
+                            btn.innerHTML = 'Получить информацию';
+                        }
+                    )
+            }
+        </script>
+    </body>
+</html>
